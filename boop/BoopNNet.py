@@ -9,10 +9,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+# canonical board is p1 is orange
+
 # channel zero is the decision type: 0 for place 1 for graduate
 # ch 1 p1 kitten pieces, one hot encoding in the 6x6 grid for positions of p1 kitten pieces
-# ch 2 p1 cat pieces, one hot encoding in the 6x6 grid for positions of p1 cat pieces
-# ch 3 p2 kitten pieces, one hot encoding in the 6x6 grid for positions of p2 kitten pieces
+# ch 2 p2 kitten pieces, one hot encoding in the 6x6 grid for positions of p2 kitten pieces
+# ch 3 p1 cat pieces, one hot encoding in the 6x6 grid for positions of p1 cat pieces
 # ch 4 p2 cat pieces, one hot encoding in the 6x6 grid for positions of p2 cat pieces
 # ch 5 p1 kitten count, filled with the number of p1 kitten pieces
 # ch 6 p2 kitten count, filled with the number of p2 kitten pieces

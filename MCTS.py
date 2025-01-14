@@ -69,7 +69,7 @@ class MCTS():
         state for the current player, then its value is -v for the other player.
 
         Returns:
-            v: the negative of the value of the current canonicalBoard
+            v: the value of the current canonicalBoard
         """
 
         s = self.game.stringRepresentation(canonicalBoard)
@@ -122,7 +122,10 @@ class MCTS():
         next_s, next_player = self.game.getNextState(canonicalBoard, 1, a)
         next_s = self.game.getCanonicalForm(next_s, next_player)
 
-        v = self.search(next_s)
+        if next_player == 1:
+            # if it is still the same player then 
+            v = self.search(next_s)
+            ...
 
         if (s, a) in self.Qsa:
             self.Qsa[(s, a)] = (self.Nsa[(s, a)] * self.Qsa[(s, a)] + v) / (self.Nsa[(s, a)] + 1)
