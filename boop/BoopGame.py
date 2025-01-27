@@ -87,15 +87,15 @@ class Game:
             # graduation choice
             row, col = move_location
             if move_type == MoveType.SINGLE_GRADUATION:
-                game_state.choose_graduation((move_location))
+                game_state.choose_graduation(((row, col),))
             elif move_type == MoveType.HORIZONTAL_TRIPLE_GRADUATION:
-                game_state.choose_graduation(((row, col, (row, col-1), (row, col+1))))
+                game_state.choose_graduation(((row, col-1), (row, col), (row, col+1)))
             elif move_type == MoveType.VERTICAL_TRIPLE_GRADUATION:
-                game_state.choose_graduation(((row, col, (row-1, col), (row+1, col))))
+                game_state.choose_graduation(((row-1, col), (row, col), (row+1, col)))
             elif move_type == MoveType.DIAGONAL_TRIPLE_GRADUATION_UP:
-                game_state.choose_graduation(((row, col, (row+1, col-1), (row-1, col+1))))
+                game_state.choose_graduation(((row-1, col+1), (row, col), (row+1, col-1)))
             elif move_type == MoveType.DIAGONAL_TRIPLE_GRADUATION_DOWN:
-                game_state.choose_graduation(((row, col, (row-1, col-1), (row+1, col+1))))
+                game_state.choose_graduation(((row-1, col-1), (row, col), (row+1, col+1)))
         if game_state.state_mode == STATE_WAITING_FOR_GRADUATION_CHOICE:
             return (self.__game_state_to_tensor(game_state), player)
         else:
@@ -122,17 +122,20 @@ class Game:
 
         187 -> ((4,4), MoveType.DIAGONAL_TRIPLE_GRADUATION_DOWN)
 
-        6x6    place kitten                       
-        6x6    place cat                      
-        6x6    single graduation options    
-        6x4    horizontal triple graduation 
-        4x6    vertical triple graduation   
-        4x4    / diagonal triple graduation
-        4x4    \ diagonal triple graduation
+               ACTION TYPE                      RANGE
+        6x6    place kitten                     0    -   35        
+        6x6    place cat                        36   -   71
+        6x6    single graduation options        72   -   107
+        6x4    horizontal triple graduation     108  -   131
+        4x6    vertical triple graduation       132  -   155
+        4x4    / diagonal triple graduation     156  -   171
+        4x4    \ diagonal triple graduation     172  -   187
         """
         
         action_space = [6*6, 6*6, 6*6, 6*4, 4*6, 4*4, 4*4]
+        # [ 36  72 108 132 156 172 188]
         action_space_cumsum = np.cumsum(action_space)
+
 
         if action < action_space_cumsum[0]:
             return ((action // 6, action % 6), MoveType.PLACE_KITTEN)
@@ -154,16 +157,6 @@ class Game:
         else:
             action -= action_space_cumsum[5]
             return ((1+(action // 4), 1+(action % 4)), MoveType.DIAGONAL_TRIPLE_GRADUATION_DOWN)
-
-    def __apply_move(self, game_state, move):
-        move_location, move_type = move
-        if move_type in [MoveType.PLACE_KITTEN, MoveType.PLACE_CAT]:
-            piece_type = "ok" if move_type == MoveType.PLACE_KITTEN else "oc"
-            game_state.place_piece(piece_type, move_location)
-
-            return
-        
-        if 
 
 
     def __tensor_to_game_state(self, board):
@@ -187,6 +180,7 @@ class Game:
         if board[0, 0, 0] == 0:
             st.state_mode = STATE_WAITING_FOR_PLACEMENT
         else:
+            st.graduation_choices = st.get_graduation_choices()
             st.state_mode = STATE_WAITING_FOR_GRADUATION_CHOICE
 
         return st
@@ -217,14 +211,61 @@ class Game:
         """
         Input:
             board: current board
-            player: current player
+            player: current player (1 or -1)
 
         Returns:
             validMoves: a binary vector of length self.getActionSize(), 1 for
                         moves that are valid from the current board and player,
                         0 for invalid moves
         """
-        pass
+        game_state = self.__tensor_to_game_state(board)
+        valid_moves = [0] * self.getActionSize()
+
+        # If waiting for graduation choice, only graduation moves are valid
+        if game_state.state_mode == STATE_WAITING_FOR_GRADUATION_CHOICE:
+            # Convert graduation choices to valid move indices
+            # don't need to call get_graduation_choices because we already have them from __tensor_to_game_state
+            for grad_choice in game_state.graduation_choices:
+                if len(grad_choice) == 1:
+                    # Single graduation
+                    row, col = grad_choice[0]
+                    action = 72 + row * 6 + col  # After placement actions (72 = 6*6*2)
+                    valid_moves[action] = 1
+                elif len(grad_choice) == 3:
+                    # Triple graduation
+                    row, col = grad_choice[1]  # Center piece
+                    # Check orientation
+                    if grad_choice[0][0] == grad_choice[1][0]:  # Same row = horizontal
+                        if col > 0 and col < 5:
+                            action = 108 + row * 4 + (col-1)  # After single graduations
+                            valid_moves[action] = 1
+                    elif grad_choice[0][1] == grad_choice[1][1]:  # Same column = vertical
+                        if row > 0 and row < 5:
+                            action = 132 + col * 4 + (row-1)  # After horizontal graduations
+                            valid_moves[action] = 1
+                    else:  # Diagonal
+                        if row > 0 and row < 5 and col > 0 and col < 5:
+                            if grad_choice[0][0] < grad_choice[1][0]:  # Up diagonal
+                                action = 156 + (row-1) * 4 + (col-1)  # After vertical graduations
+                                valid_moves[action] = 1
+                            else:  # Down diagonal
+                                action = 172 + (row-1) * 4 + (col-1)  # After up diagonals
+                                valid_moves[action] = 1
+
+        # If waiting for placement, only placement moves are valid
+        else:
+            game_state.update_valid_moves()
+            # Convert placeable squares and pieces to valid move indices
+            for row, col in game_state.placeable_squares:
+                for piece in game_state.placeable_pieces:
+                    if piece.endswith('k'):
+                        action = row * 6 + col  # Kitten placement
+                        valid_moves[action] = 1
+                    else:  # piece.endswith('c')
+                        action = 36 + row * 6 + col  # Cat placement (after kitten placements)
+                        valid_moves[action] = 1
+
+        return np.array(valid_moves)
 
     def getGameEnded(self, board, player):
         """
@@ -292,15 +333,86 @@ class Game:
     def getSymmetries(self, board, pi):
         """
         Input:
-            board: current board
+            board: current board (9x6x6)
             pi: policy vector of size self.getActionSize()
 
         Returns:
-            symmForms: a list of [(board,pi)] where each tuple is a symmetrical
-                       form of the board and the corresponding pi vector. This
-                       is used when training the neural network from examples.
+            symmForms: list of [(board,pi)] where each tuple is a symmetrical form
         """
-        pass
+        # Split pi into different move types for easier transformation
+        pi = np.array(pi)
+        pi_kitten_place = pi[:36].reshape(6, 6)          # First 36 moves are kitten placements
+        pi_cat_place = pi[36:72].reshape(6, 6)           # Next 36 are cat placements
+        pi_single_grad = pi[72:108].reshape(6, 6)        # Single graduations
+        pi_horiz_grad = pi[108:132].reshape(6, 4)        # Horizontal triple graduations
+        pi_vert_grad = pi[132:156].reshape(4, 6)         # Vertical triple graduations
+        pi_diag_up_grad = pi[156:172].reshape(4, 4)      # Diagonal up triple graduations
+        pi_diag_down_grad = pi[172:188].reshape(4, 4)    # Diagonal down triple graduations
+
+        symmForms = []
+        
+        # For each transformation (rot0, rot90, rot180, rot270, flipH, flipV, diagFlip, antiDiagFlip)
+        for i in range(8):
+            rot = i % 4
+            flip = i // 4
+            
+            # Transform the board layers
+            newBoard = np.copy(board)
+            for c in range(1, 5):  # Only transform piece channels
+                if flip:
+                    newBoard[c] = np.fliplr(board[c])
+                newBoard[c] = np.rot90(newBoard[c], k=rot)
+                
+            # Transform the policy components
+            new_pi_kitten = np.copy(pi_kitten_place)
+            new_pi_cat = np.copy(pi_cat_place)
+            new_pi_single = np.copy(pi_single_grad)
+            new_pi_horiz = np.copy(pi_horiz_grad)
+            new_pi_vert = np.copy(pi_vert_grad)
+            new_pi_diag_up = np.copy(pi_diag_up_grad)
+            new_pi_diag_down = np.copy(pi_diag_down_grad)
+            
+            if flip:
+                new_pi_kitten = np.fliplr(new_pi_kitten)
+                new_pi_cat = np.fliplr(new_pi_cat)
+                new_pi_single = np.fliplr(new_pi_single)
+                new_pi_horiz = np.fliplr(new_pi_horiz)
+                new_pi_vert = np.fliplr(new_pi_vert)
+                new_pi_diag_up = np.fliplr(new_pi_diag_up)
+                new_pi_diag_down = np.fliplr(new_pi_diag_down)
+                # Swap diagonal types when flipping
+                new_pi_diag_up, new_pi_diag_down = new_pi_diag_down, new_pi_diag_up
+                
+            # Apply rotation
+            new_pi_kitten = np.rot90(new_pi_kitten, k=rot)
+            new_pi_cat = np.rot90(new_pi_cat, k=rot)
+            new_pi_single = np.rot90(new_pi_single, k=rot)
+            
+            # For odd rotations (90, 270), swap horizontal and vertical graduations
+            if rot % 2 == 1:
+                new_pi_horiz, new_pi_vert = np.rot90(new_pi_vert, k=rot), np.rot90(new_pi_horiz, k=rot)
+                # Also swap diagonal types for odd rotations
+                new_pi_diag_up, new_pi_diag_down = np.rot90(new_pi_diag_down, k=rot), np.rot90(new_pi_diag_up, k=rot)
+            else:
+                new_pi_horiz = np.rot90(new_pi_horiz, k=rot)
+                new_pi_vert = np.rot90(new_pi_vert, k=rot)
+                new_pi_diag_up = np.rot90(new_pi_diag_up, k=rot)
+                new_pi_diag_down = np.rot90(new_pi_diag_down, k=rot)
+                
+            # Reconstruct the policy vector
+            newPi = np.concatenate([
+                new_pi_kitten.flatten(),
+                new_pi_cat.flatten(),
+                new_pi_single.flatten(),
+                new_pi_horiz.flatten(),
+                new_pi_vert.flatten(),
+                new_pi_diag_up.flatten(),
+                new_pi_diag_down.flatten()
+            ])
+            
+            symmForms.append((newBoard, newPi))
+        
+        return symmForms
 
     def stringRepresentation(self, board):
         """

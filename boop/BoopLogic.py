@@ -130,10 +130,8 @@ class GameState:
         self.check_for_win()
 
         # Check for graduation of Kittens to Cats
-        graduation_choices = [
-            (pos,) for pos in self.get_grad_options_eight()
-        ] + self.get_grad_options_three()
-
+        graduation_choices = self.get_graduation_choices()
+        
         if len(graduation_choices) == 1:
             # only one graduation choice, perform it, switch turn
             self.perform_graduation(graduation_choices[0])
@@ -147,6 +145,11 @@ class GameState:
         else:
             # no graduation choices, switch turn
             self.switch_turn()
+    
+    def get_graduation_choices(self):
+        return [
+            (pos,) for pos in self.get_grad_options_eight()
+        ] + self.get_grad_options_three()
 
     def _clear_valid_moves(self):
         """
@@ -186,10 +189,10 @@ class GameState:
             position (tuple): The position of the placed piece.
 
         Description:
-            - When a piece is added to the board, it “boops” all of the pieces
+            - When a piece is added to the board, it "boops" all of the pieces
                 adjacent to it, pushing them one space away, including
                 diagonally.
-            - A piece can be booped off the bed, returning it to the owner’s
+            - A piece can be booped off the bed, returning it to the owner's
                 pool of pieces.
             - A booped piece does not cause a chain reaction when it moves into
                 a new space.
@@ -352,7 +355,8 @@ class GameState:
                                 "Graduation detected at positions: %s", positions
                             )
                             graduation_choices.add(tuple(positions))
-        return list(graduation_choices)
+        # make sure graduation choices are sorted to maintain consistency 
+        return [tuple(sorted(choice)) for choice in graduation_choices]
 
     def update_valid_moves(self):
         """
@@ -456,6 +460,6 @@ class GameState:
         "orange". Updates valid moves and sets the state mode to waiting for placement.
         """
         self.state_mode = STATE_WAITING_FOR_PLACEMENT
-        self.update_valid_moves()
         self.current_turn = "gray" if self.current_turn == "orange" else "orange"
+        self.update_valid_moves()
         logging.debug("Switched turn to: %s", self.current_turn)
